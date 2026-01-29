@@ -20,6 +20,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+
+
+/**
+ * Main UI screen containing switches to control
+ * YouTube and Camera blocking independently.
+ *
+ * Each switch sends a broadcast that is received
+ * by AppBlockReceiver, which then starts the
+ * foreground blocking service.
+ */
 class MainActivity : ComponentActivity() {
 
 
@@ -29,8 +39,12 @@ class MainActivity : ComponentActivity() {
 
 
         setContent {
+            // State for YouTube blocking switch
             var youtubeBlocked by remember { mutableStateOf(false) }
 
+
+           // State for Camera blocking switch
+            var cameraBlocked by remember { mutableStateOf(false) }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -38,6 +52,9 @@ class MainActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                /**
+                 * YouTube blocking switch
+                 */
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -49,15 +66,46 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.weight(1f))
                     Switch(
                         checked = youtubeBlocked,
-                        onCheckedChange = {
-                            youtubeBlocked = it
-                            val intent = Intent(Actions.ACTION_BLOCK_APPS_CHANGED).apply {
-                                putExtra(Actions.EXTRA_BLOCK_APPS, it)
+                        onCheckedChange = {enabled->
+                            youtubeBlocked = enabled
+
+                            //Broadcast Youtube blocking state
+                            val intent = Intent(Actions.ACTION_BLOCK_YOUTUBE).apply {
+                                putExtra(Actions.EXTRA_BLOCK_APPS, enabled)
                             }
                             sendBroadcast(intent)
                         }
                     )
                 }
-            }        }
+                /**
+                 * Camera blocking switch
+                 */
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(vertical = 16.dp)
+                ) {
+                    Text(
+                        text = "Block Camera"
+                    )
+                    Spacer(
+                        modifier = Modifier
+                            .weight(1f)
+                    )
+                    Switch(
+                        checked = cameraBlocked,
+                        onCheckedChange = {enabled ->
+                            cameraBlocked = enabled
+
+                            //Broadcast camera blocking state
+                            val intent = Intent(Actions.ACTION_BLOCK_CAMERA).apply {
+                                putExtra(Actions.EXTRA_BLOCK_APPS,enabled)
+                            }
+                            sendBroadcast(intent)
+                        }
+                    )
+                }
+            }
+        }
     }
 }

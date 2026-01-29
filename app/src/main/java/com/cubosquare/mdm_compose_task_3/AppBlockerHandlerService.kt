@@ -14,29 +14,63 @@ import android.app.usage.UsageEvents
 import android.os.Handler
 import android.os.Looper
 
+
+/**
+ * Foreground service responsible for enforcing app blocking rules.
+ * It continuously monitors foreground app usage and reacts
+ * when restricted apps (YouTube or Camera) are launched.
+ */
 class AppBlockerHandlerService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private var isBlocking = false
+
+    // Flags to track which features are currently blocked
+    private var blockYouTube = false
+    private var blockCamera = false
+
+    // Package names of apps to be blocked
     private val youtubePackage = "com.google.android.youtube"
+    private val cameraPackages = listOf(
+        "com.android.camera", // AOSP Camera
+        "com.android.camera2", // Camera2
+        "com.oplus.camera", // Oppo / Realme
+        "com.miui.camera" // Xiaomi
+    )
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private var isBlocking = false
+
+
+
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        isBlocking = intent?.getBooleanExtra(Actions.EXTRA_BLOCK_APPS, false) ?: false
 
-        startForeground(1001, createNotification("YouTube Blocking: $isBlocking"))
+// Read blocking states sent from BroadcastReceiver
+        blockYouTube = intent?.getBooleanExtra(Actions.ACTION_BLOCK_YOUTUBE, false) ?: blockYouTube
+        blockCamera = intent?.getBooleanExtra(Actions.ACTION_BLOCK_CAMERA, false) ?: blockCamera
 
-        if (isBlocking) {
+
+// Start service as foreground to avoid being killed by system
+        startForeground(
+            1001,
+            createNotification("YouTube: $blockYouTube | Camera: $blockCamera")
+        )
+
+
+// Start or stop monitoring based on current blocking state
+        if (blockYouTube || blockCamera) {
             startMonitoring()
         } else {
             stopMonitoring()
         }
-
         return START_STICKY
     }
 
+    /**
+     * Creates a persistent notification required for foreground services.
+     */
     private fun createNotification(text: String): Notification {
         val channelId = "block_service_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -49,48 +83,78 @@ class AppBlockerHandlerService : Service() {
                 .createNotificationChannel(channel)
         }
 
+
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Blocking Service Active")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .build()
     }
-
+    /**
+     * Runnable that periodically checks which app moved to foreground.
+     */
     private val monitorRunnable = object : Runnable {
         override fun run() {
-            if (isBlocking) {
-                checkAndBlockYouTube()
+            if (blockYouTube || blockCamera) {
+                checkAndBlockApps()
                 handler.postDelayed(this, 1000)
             }
         }
     }
 
+
     private fun startMonitoring() {
         handler.post(monitorRunnable)
     }
-
     private fun stopMonitoring() {
         handler.removeCallbacks(monitorRunnable)
     }
 
-    private fun checkAndBlockYouTube() {
+
+
+    /**
+     * Checks foreground apps and redirects user to home
+     * if a blocked app is opened.
+     */
+    private fun checkAndBlockApps() {
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val beginTime = endTime - 2000 // last 2 seconds
+        val beginTime = endTime - 2000
+
+
         val events = usageStatsManager.queryEvents(beginTime, endTime)
         val event = UsageEvents.Event()
+
+
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND &&
-                event.packageName == youtubePackage) {
 
-                // Bring user back to home if YouTube is opened
-                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+
+            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+
+
+// Block YouTube if enabled
+                if (blockYouTube && event.packageName == youtubePackage) {
+                    redirectToHome()
                 }
-                startActivity(homeIntent)
-            }
-        }
+
+
+// Block Camera apps if enabled
+if (blockCamera && cameraPackages.contains(event.packageName)) {
+redirectToHome()
+}
+}
+}
+}
+
+/**
+ * Sends user back to home screen to prevent app usage.
+ */
+private fun redirectToHome() {
+    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+        addCategory(Intent.CATEGORY_HOME)
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
+    startActivity(homeIntent)
+}
 }
